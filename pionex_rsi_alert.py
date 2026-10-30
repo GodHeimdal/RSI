@@ -27,6 +27,7 @@ SIMBOLOS = [
     "ETH_USDT_PERP",
     "MUX_USDT_PERP",     # Micron tokenizado (MUXUSDT.P)
     "METAX_USDT_PERP",   # Meta tokenizado (METAXUSDT.P)
+    "WTI_USDT_PERP",
 ]
 PERIODO_RSI = 14
 INTERVALO = "60M"          # 1 hora
