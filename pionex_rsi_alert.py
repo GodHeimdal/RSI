@@ -32,7 +32,7 @@ SIMBOLOS = [
 PERIODO_RSI = 14
 INTERVALO = "60M"          # 1 hora
 NIVEL_SOBREVENTA = 30
-AVISAR_SOBRECOMPRA = False # poné True para avisar también al cruzar hacia arriba de 70
+AVISAR_SOBRECOMPRA = True # poné True para avisar también al cruzar hacia arriba de 70
 NIVEL_SOBRECOMPRA = 70
 # ------------------------------------------------
 
