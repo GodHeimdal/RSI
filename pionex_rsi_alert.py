@@ -22,7 +22,7 @@ import urllib.request
 SIMBOLOS = [
     "HYPE_USDT_PERP",
     "SOL_USDT_PERP",
-    "DOGE_USDT_PERP",
+    "XRP_USDT_PERP",
     "BTC_USDT_PERP",
     "ETH_USDT_PERP",
     "MUX_USDT_PERP",     # Micron tokenizado (MUXUSDT.P)
