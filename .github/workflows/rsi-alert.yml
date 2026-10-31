@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "--estado"
+        description: "Vacío = normal. Escribí --test para probar Telegram"
         required: false
         default: ""
 
