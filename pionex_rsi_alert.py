@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Alerta RSI(14) 1H para perpetuos de Pionex -> aviso por Telegram.
+Alertas RSI(14) para perpetuos de Pionex -> aviso por Telegram.
 Solo usa la librería estándar de Python (no hay que instalar nada).
 
 Uso:
-  python pionex_rsi_alert.py            # revisa los activos y avisa
-  python pionex_rsi_alert.py --test     # manda un mensaje de prueba a Telegram
-  python pionex_rsi_alert.py --buscar MU META CL   # busca los símbolos reales en Pionex
-  python pionex_rsi_alert.py --estado   # muestra el RSI actual de todos (sin avisar)
+  python pionex_rsi_alert.py              # alertas de 1H (se corre cada hora)
+  python pionex_rsi_alert.py --diario     # alertas diarias (se corre 1 vez por día)
+  python pionex_rsi_alert.py --test       # mensaje de prueba a Telegram
+  python pionex_rsi_alert.py --estado     # muestra el RSI actual de todo, sin avisar
+  python pionex_rsi_alert.py --buscar PEPE   # busca símbolos en Pionex
 """
 import json
 import os
@@ -18,27 +19,35 @@ import urllib.parse
 import urllib.request
 
 # ---------------- CONFIGURACIÓN ----------------
-# Ajustá los símbolos si alguno no existe. Usá --buscar para encontrarlos.
+PERIODO_RSI = 14
+
+# --- Alertas de 1 HORA: avisa cuando el RSI cruza hacia ABAJO de este nivel ---
 SIMBOLOS = [
     "HYPE_USDT_PERP",
     "SOL_USDT_PERP",
     "XRP_USDT_PERP",
     "BTC_USDT_PERP",
     "ETH_USDT_PERP",
-    "MUX_USDT_PERP",     # Micron tokenizado (MUXUSDT.P)
-    "METAX_USDT_PERP",   # Meta tokenizado (METAXUSDT.P)
+    "MUX_USDT_PERP",     # Micron tokenizado
+    "METAX_USDT_PERP",   # Meta tokenizado
     "WTI_USDT_PERP",
 ]
-PERIODO_RSI = 14
-INTERVALO = "60M"          # 1 hora
 NIVEL_SOBREVENTA = 30
-AVISAR_SOBRECOMPRA = True # poné True para avisar también al cruzar hacia arriba de 70
+AVISAR_SOBRECOMPRA = True   # True = también avisa al cruzar hacia arriba de 70
 NIVEL_SOBRECOMPRA = 70
+
+# --- Alertas DIARIAS: cada una con su propio nivel ---
+ALERTAS_DIARIAS = [
+    {"simbolo": "BTC_USDT_PERP", "nivel": 38},
+]
 # ------------------------------------------------
 
 BASE = "https://api.pionex.com"
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# milisegundos que dura cada vela (para descartar la que todavía no cerró)
+DURACION_MS = {"60M": 3_600_000, "1D": 86_400_000}
 
 
 def get(path, params):
@@ -90,15 +99,14 @@ def rsi_wilder(cierres, n=14):
     return out
 
 
-def velas_cerradas(simbolo):
-    j = get("/api/v1/market/klines", {"symbol": simbolo, "interval": INTERVALO, "limit": 300})
+def velas_cerradas(simbolo, intervalo):
+    j = get("/api/v1/market/klines", {"symbol": simbolo, "interval": intervalo, "limit": 300})
     if not j.get("result", True):
         raise RuntimeError(j.get("message") or j.get("code") or str(j))
-    klines = j["data"]["klines"]
-    klines = sorted(klines, key=lambda k: int(k["time"]))
+    klines = sorted(j["data"]["klines"], key=lambda k: int(k["time"]))
     ahora_ms = int(time.time() * 1000)
     # descarta la vela en curso (todavía no cerró)
-    if klines and int(klines[-1]["time"]) + 3600_000 > ahora_ms:
+    if klines and int(klines[-1]["time"]) + DURACION_MS[intervalo] > ahora_ms:
         klines = klines[:-1]
     return [float(k["close"]) for k in klines]
 
@@ -112,35 +120,51 @@ def buscar(terminos):
         print(f"{t}: {', '.join(res) if res else 'sin resultados'}")
 
 
-def revisar(solo_estado=False):
+def chequear(simbolo, intervalo, etiqueta, nivel_abajo, solo_estado, nivel_arriba=None, mensaje_extra=""):
+    try:
+        cierres = velas_cerradas(simbolo, intervalo)
+        r = rsi_wilder(cierres, PERIODO_RSI)
+        if len(r) < 2:
+            print(f"{simbolo} [{etiqueta}]: pocos datos")
+            return
+        prev, last = r[-2], r[-1]
+        print(f"{simbolo} [{etiqueta}]: RSI anterior {prev:.1f} -> actual {last:.1f} (cierre {cierres[-1]})")
+        if solo_estado:
+            return
+        if prev >= nivel_abajo > last:
+            telegram(f"🔻 {simbolo}: RSI(14) {etiqueta} cruzó por debajo de {nivel_abajo}. "
+                     f"RSI {last:.1f} | cierre {cierres[-1]}{mensaje_extra}")
+        elif nivel_arriba is not None and prev <= nivel_arriba < last:
+            telegram(f"🔺 {simbolo}: RSI(14) {etiqueta} cruzó por encima de {nivel_arriba}. "
+                     f"RSI {last:.1f} | cierre {cierres[-1]}")
+    except Exception as e:
+        print(f"{simbolo} [{etiqueta}]: ERROR -> {e}")
+
+
+def revisar_1h(solo_estado=False):
+    arriba = NIVEL_SOBRECOMPRA if AVISAR_SOBRECOMPRA else None
     for s in SIMBOLOS:
-        try:
-            cierres = velas_cerradas(s)
-            r = rsi_wilder(cierres, PERIODO_RSI)
-            if len(r) < 2:
-                print(f"{s}: pocos datos")
-                continue
-            prev, last = r[-2], r[-1]
-            print(f"{s}: RSI anterior {prev:.1f} -> actual {last:.1f} (cierre {cierres[-1]})")
-            if solo_estado:
-                continue
-            if prev >= NIVEL_SOBREVENTA > last:
-                telegram(f"🔻 {s}: RSI(14) 1H cruzó por debajo de {NIVEL_SOBREVENTA} "
-                         f"(sobreventa). RSI {last:.1f} | cierre {cierres[-1]}")
-            elif AVISAR_SOBRECOMPRA and prev <= NIVEL_SOBRECOMPRA < last:
-                telegram(f"🔺 {s}: RSI(14) 1H cruzó por encima de {NIVEL_SOBRECOMPRA} "
-                         f"(sobrecompra). RSI {last:.1f} | cierre {cierres[-1]}")
-        except Exception as e:
-            print(f"{s}: ERROR -> {e}  (revisá el símbolo con --buscar)")
+        chequear(s, "60M", "1H", NIVEL_SOBREVENTA, solo_estado, nivel_arriba=arriba)
+        time.sleep(0.3)
+
+
+def revisar_diario(solo_estado=False):
+    for a in ALERTAS_DIARIAS:
+        chequear(a["simbolo"], "1D", "DIARIO", a["nivel"], solo_estado)
+        time.sleep(0.3)
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if args and args[0] == "--test":
+    modo = args[0] if args else ""
+    if modo == "--test":
         telegram("✅ Bot de RSI funcionando")
-    elif args and args[0] == "--buscar":
-        buscar(args[1:] or ["MUX", "METAX", "CL"])
-    elif args and args[0] == "--estado":
-        revisar(solo_estado=True)
+    elif modo == "--buscar":
+        buscar(args[1:] or ["BTC"])
+    elif modo == "--estado":
+        revisar_1h(solo_estado=True)
+        revisar_diario(solo_estado=True)
+    elif modo == "--diario":
+        revisar_diario()
     else:
-        revisar()
+        revisar_1h()
