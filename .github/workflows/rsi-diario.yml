@@ -1,0 +1,20 @@
+name: RSI diario
+
+on:
+  schedule:
+    - cron: "10 0 * * *"   # 00:10 UTC (21:10 Argentina), después del cierre de la vela diaria
+  workflow_dispatch:
+
+jobs:
+  rsi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Revisar RSI diario
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python pionex_rsi_alert.py --diario
